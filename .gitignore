@@ -1,0 +1,22 @@
+# Rust
+/target/
+debug/
+release/
+
+# 数据目录（运行时生成，含 API key 与会话数据）
+.tuai/
+**/.tuai/
+
+# 本地工具与缓存
+.tools/
+
+# 编辑器
+.vscode/
+.idea/
+
+# 项目计划（内部文档）
+PLAN.md
+
+# 系统
+.DS_Store
+Thumbs.db
