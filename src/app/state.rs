@@ -304,6 +304,15 @@ impl FormState {
         f.cx += 1;
     }
 
+    /// 在光标处插入整段文本（粘贴），保留换行并统一为 \n。
+    pub fn insert_text(&mut self, text: &str) {
+        let text = text.replace("\r\n", "\n").replace('\r', "\n");
+        let f = &mut self.fields[self.idx];
+        let byte_idx = char_to_byte(&f.value, f.cx);
+        f.value.insert_str(byte_idx, &text);
+        f.cx += text.chars().count();
+    }
+
     pub fn backspace(&mut self) {
         if self.fields[self.idx].cx > 0 {
             let f = &mut self.fields[self.idx];
@@ -386,6 +395,30 @@ impl InputState {
             let next = self.lines.remove(self.cy + 1);
             self.lines[self.cy].push_str(&next);
         }
+    }
+
+    /// 在光标处插入整段文本（粘贴），保留换行并统一为 \n。
+    /// 多行时按 \n 拆分插入，光标定位到插入文本末尾。
+    pub fn insert_text(&mut self, text: &str) {
+        let text = text.replace("\r\n", "\n").replace('\r', "\n");
+        if !text.contains('\n') {
+            let byte = char_to_byte(&self.lines[self.cy], self.cx);
+            self.lines[self.cy].insert_str(byte, &text);
+            self.cx += text.chars().count();
+            return;
+        }
+        let byte = char_to_byte(&self.lines[self.cy], self.cx);
+        let head = self.lines[self.cy][..byte].to_string();
+        let tail = self.lines[self.cy][byte..].to_string();
+        let mut parts: Vec<String> = text.split('\n').map(|s| s.to_string()).collect();
+        let mut lines = self.lines[..self.cy].to_vec();
+        lines.push(head + &parts.remove(0));
+        lines.append(&mut parts);
+        let last = lines.len() - 1;
+        lines[last] = format!("{}{}", lines[last], tail);
+        self.cy = last;
+        self.cx = lines[last].chars().count();
+        self.lines = lines;
     }
 
     pub fn left(&mut self) {
@@ -542,5 +575,30 @@ mod tests {
         assert!(p.items[0].starred);
         // 收藏项去重：m1 只出现一次
         assert_eq!(p.items.iter().filter(|i| i.label == "m1").count(), 1);
+    }
+
+    #[test]
+    fn input_insert_text_single() {
+        let mut i = InputState::new();
+        i.set_text("abc");
+        i.cx = 1; // 光标在 'b' 前
+        i.insert_text("XY");
+        assert_eq!(i.take(), "aXYbc");
+    }
+
+    #[test]
+    fn input_insert_text_multiline() {
+        let mut i = InputState::new();
+        i.insert_char('a');
+        i.insert_char('b');
+        i.insert_text("x\ny\nz");
+        assert_eq!(i.take(), "abx\ny\nz");
+    }
+
+    #[test]
+    fn input_insert_text_crlf() {
+        let mut i = InputState::new();
+        i.insert_text("a\r\nb");
+        assert_eq!(i.take(), "a\nb");
     }
 }
