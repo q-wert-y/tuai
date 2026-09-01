@@ -68,6 +68,86 @@ pub struct App {
     pub ctrlc_at: Option<Instant>,
     pub models_loading: bool,
     pub quitting: bool,
+    /// 普通模式收到 Esc 的待定时刻（等待判断是否为粘贴开始标记）
+    pub esc_at: Option<Instant>,
+    /// 开始标记 [200~ 已匹配的部分字符
+    pub start_probe: Option<Vec<char>>,
+    /// 正在收集的 bracketed paste 内容（Windows 下 crossterm 无 Paste 事件时兜底）
+    paste: Option<PasteCollect>,
+}
+
+/// bracketed paste 序列的按键流重组器。
+/// Windows 上 crossterm 走 ReadConsoleInputW，把 \x1b[200~..\x1b[201~ 拆成单个按键
+/// （换行变成 Enter），不产生 Event::Paste —— 这里在按键流里重组。
+struct PasteCollect {
+    buf: Vec<u8>,
+    esc: bool,
+    /// -1 = 无探测；0..4 = 正在匹配 "[201~" 的 '[' 之后部分
+    probe: i32,
+    done: bool,
+}
+
+impl PasteCollect {
+    fn new() -> Self {
+        PasteCollect {
+            buf: Vec::new(),
+            esc: false,
+            probe: -1,
+            done: false,
+        }
+    }
+
+    fn feed(&mut self, key: KeyEvent) {
+        if self.probe >= 0 {
+            if let KeyCode::Char(c) = key.code {
+                let expect = "201~".as_bytes()[self.probe as usize] as char;
+                if c == expect {
+                    self.probe += 1;
+                    if self.probe == 4 {
+                        self.done = true;
+                    }
+                    return;
+                }
+            }
+            // 探测失败：把挂起的 ESC 与 '[' 作为内容保留
+            self.buf.push(b'\x1b');
+            self.buf.push(b'[');
+            self.esc = false;
+            self.probe = -1;
+        }
+        match key.code {
+            KeyCode::Esc => {
+                if self.esc {
+                    // 连续两个 ESC：内容中的转义字符
+                    self.buf.push(b'\x1b');
+                    self.esc = false;
+                } else {
+                    self.esc = true;
+                }
+            }
+            KeyCode::Char('[') if self.esc => {
+                // 候选结束标记 \x1b[201~
+                self.probe = 0;
+                self.esc = false;
+            }
+            KeyCode::Char(c) => {
+                let mut tmp = [0u8; 4];
+                self.buf
+                    .extend_from_slice(c.encode_utf8(&mut tmp).as_bytes());
+                self.esc = false;
+            }
+            KeyCode::Enter => {
+                // 粘贴内容的换行被 conhost 转成 Enter 键
+                self.buf.push(b'\n');
+                self.esc = false;
+            }
+            _ => {}
+        }
+    }
+
+    fn finish(self) -> String {
+        String::from_utf8_lossy(&self.buf).into_owned()
+    }
 }
 
 impl App {
@@ -110,6 +190,9 @@ impl App {
             ctrlc_at: None,
             models_loading: false,
             quitting: false,
+            esc_at: None,
+            start_probe: None,
+            paste: None,
         };
         // 无任何提供商（首次运行）：直接打开添加表单引导配置
         if app.config.providers.is_empty() {
@@ -149,7 +232,7 @@ impl App {
             AppEvent::Term(e) => self.on_term(e, tx),
             AppEvent::Llm(e) => self.on_llm(e, tx),
             AppEvent::Models(r) => self.on_models(r),
-            AppEvent::Tick => self.on_tick(),
+            AppEvent::Tick => self.on_tick(tx),
         }
     }
 
@@ -194,6 +277,10 @@ impl App {
     }
 
     fn on_key(&mut self, key: KeyEvent, tx: &mpsc::Sender<AppEvent>) {
+        // 手动重组 bracketed paste（crossterm 在 Windows 上不产生 Event::Paste）
+        if self.feed_paste(key, tx) {
+            return;
+        }
         // 全局：Ctrl 组合键
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             if let KeyCode::Char(c) = key.code {
@@ -213,6 +300,10 @@ impl App {
                     }
                     'd' => {
                         self.quitting = true;
+                        return;
+                    }
+                    'v' => {
+                        self.paste_clipboard();
                         return;
                     }
                     'r' => {
@@ -258,11 +349,7 @@ impl App {
                 return;
             }
             KeyCode::Esc => {
-                if self.generating.is_some() {
-                    self.stop_generation(tx);
-                } else {
-                    self.focus = Focus::Input;
-                }
+                self.do_esc(tx);
                 return;
             }
             _ => {}
@@ -1078,11 +1165,116 @@ impl App {
         );
     }
 
-    fn on_tick(&mut self) {
+    fn on_tick(&mut self, tx: &mpsc::Sender<AppEvent>) {
         if let Some(t) = &self.toast {
             if t.at.elapsed() >= Duration::from_secs(3) {
                 self.toast = None;
             }
+        }
+        // Esc 待定超时：判定为普通 Esc（按下后未跟 '['），结算其功能
+        if let Some(at) = self.esc_at {
+            if at.elapsed() > Duration::from_millis(120) {
+                let probe = self.start_probe.take();
+                self.esc_at = None;
+                self.do_esc(tx);
+                if let Some(chars) = probe {
+                    // 回放开始标记中已匹配的字符（[200~ 判定失败）
+                    for c in chars {
+                        self.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE), tx);
+                    }
+                }
+            }
+        }
+    }
+
+    /// 执行 Esc 的功能：生成中停止生成，否则焦点回到输入框。
+    fn do_esc(&mut self, tx: &mpsc::Sender<AppEvent>) {
+        if self.generating.is_some() {
+            self.stop_generation(tx);
+        } else {
+            self.focus = Focus::Input;
+        }
+    }
+
+    /// 在按键流中重组 bracketed paste 序列。返回 true 表示按键已被粘贴解析消费。
+    fn feed_paste(&mut self, key: KeyEvent, tx: &mpsc::Sender<AppEvent>) -> bool {
+        // 收集模式：所有按键都喂给解析器，换行不再触发发送
+        if let Some(p) = &mut self.paste {
+            p.feed(key);
+            if p.done {
+                let text = self.paste.take().unwrap().finish();
+                self.on_paste(&text);
+            }
+            return true;
+        }
+        match key.code {
+            KeyCode::Esc => {
+                // 可能是开始标记 \x1b[200~ 的 ESC，暂缓执行功能
+                self.esc_at = Some(Instant::now());
+                true
+            }
+            KeyCode::Char(c) => {
+                // 正在匹配开始标记 "[200~"
+                if let Some(probe) = &mut self.start_probe {
+                    let expect = "200~";
+                    let i = probe.len(); // 含开头的 '['
+                    if i > 0 && i <= 4 && c == expect.chars().nth(i - 1).unwrap() {
+                        probe.push(c);
+                        if probe.len() == 5 {
+                            self.start_probe = None;
+                            self.paste = Some(PasteCollect::new());
+                        }
+                        return true;
+                    }
+                    // 判定失败：回退（执行挂起 Esc + 回放已匹配字符）
+                    let chars = self.start_probe.take().unwrap();
+                    self.esc_at = None;
+                    self.do_esc(tx);
+                    for ch in chars {
+                        self.on_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE), tx);
+                    }
+                    return false;
+                }
+                // Esc 待定后收到字符
+                if let Some(at) = self.esc_at {
+                    if at.elapsed() < Duration::from_millis(300) {
+                        if c == '[' {
+                            self.esc_at = None;
+                            self.start_probe = Some(vec!['[']);
+                            return true;
+                        }
+                        self.esc_at = None;
+                        self.do_esc(tx);
+                    }
+                }
+                false
+            }
+            _ => {
+                // Esc 待定后收到非字符键：结算 Esc 功能
+                if self.esc_at.is_some() {
+                    let probe = self.start_probe.take();
+                    self.esc_at = None;
+                    self.do_esc(tx);
+                    if let Some(chars) = probe {
+                        for c in chars {
+                            self.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE), tx);
+                        }
+                    }
+                }
+                false
+            }
+        }
+    }
+
+    /// 通过系统剪贴板读取文本（Ctrl+V 路径，不依赖终端粘贴事件）。
+    fn paste_clipboard(&mut self) {
+        match arboard::Clipboard::new() {
+            Ok(mut cb) => match cb.get_text() {
+                Ok(t) if !t.trim().is_empty() => self.on_paste(&t),
+                Ok(_) => self.toast("剪贴板无文本内容", false),
+                Err(e) => self.toast(format!("读取剪贴板失败: {e}"), true),
+            },
+            Err(e) => self.toast(format!("无法访问剪贴板: {e}"), true),
         }
     }
 
@@ -1589,4 +1781,68 @@ async fn drive(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> anyhow
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn paste_reassembly_multiline() {
+        // Windows 拆键流：内容 "a\nb\nc" 的换行变 Enter
+        let mut p = PasteCollect::new();
+        for code in [
+            KeyCode::Char('a'),
+            KeyCode::Enter,
+            KeyCode::Char('b'),
+            KeyCode::Enter,
+            KeyCode::Char('c'),
+        ] {
+            p.feed(key(code));
+        }
+        assert!(!p.done);
+        // 结束标记 \x1b[201~ 的拆键流（先 Esc）
+        p.feed(key(KeyCode::Esc));
+        for c in ['[', '2', '0', '1', '~'] {
+            p.feed(key(KeyCode::Char(c)));
+        }
+        assert!(p.done);
+        assert_eq!(p.finish(), "a\nb\nc");
+    }
+
+    #[test]
+    fn paste_reassembly_escaped_esc() {
+        // 内容含 ESC（转义为 ESC ESC），结束标记不被误判
+        let mut p = PasteCollect::new();
+        p.feed(key(KeyCode::Esc));
+        p.feed(key(KeyCode::Esc));
+        p.feed(key(KeyCode::Char('x')));
+        assert!(!p.done);
+        p.feed(key(KeyCode::Esc));
+        for c in ['[', '2', '0', '1', '~'] {
+            p.feed(key(KeyCode::Char(c)));
+        }
+        assert!(p.done);
+        assert_eq!(p.finish(), "\x1bx");
+    }
+
+    #[test]
+    fn paste_reassembly_content_looks_like_end_marker() {
+        // 内容里出现 "[201~"（无 ESC 前缀）：不应误判为结束标记
+        let mut p = PasteCollect::new();
+        for c in ['[', '2', '0', '1', '~'] {
+            p.feed(key(KeyCode::Char(c)));
+        }
+        assert!(!p.done);
+        p.feed(key(KeyCode::Esc));
+        for c in ['[', '2', '0', '1', '~'] {
+            p.feed(key(KeyCode::Char(c)));
+        }
+        assert!(p.done);
+        assert_eq!(p.finish(), "[201~");
+    }
 }
