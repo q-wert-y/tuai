@@ -494,6 +494,13 @@ pub struct Generation {
     pub handle: tokio::task::JoinHandle<()>,
 }
 
+/// 会话列表 + 当前会话消息的应用层数据视图。
+pub struct ChatView {
+    pub sessions: Vec<Session>,
+    pub current: Option<usize>,
+    pub messages: Vec<Message>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -536,11 +543,4 @@ mod tests {
         // 收藏项去重：m1 只出现一次
         assert_eq!(p.items.iter().filter(|i| i.label == "m1").count(), 1);
     }
-}
-
-/// 会话列表 + 当前会话消息的应用层数据视图。
-pub struct ChatView {
-    pub sessions: Vec<Session>,
-    pub current: Option<usize>,
-    pub messages: Vec<Message>,
 }
