@@ -87,13 +87,7 @@ cargo build --release          # 当前平台
 cargo test                     # 运行测试
 ```
 
-交叉编译 Linux 版（在 Windows 上，需 zig + cargo-zigbuild）：
-
-```bash
-rustup target add x86_64-unknown-linux-musl
-cargo install cargo-zigbuild
-cargo zigbuild --release --target x86_64-unknown-linux-musl
-```
+Linux/macOS 下在同一目录执行 `cargo build --release` 即可（代码本身跨平台，只是本项目未提供预编译包）。
 
 ## 设计原则
 
@@ -107,8 +101,7 @@ cargo zigbuild --release --target x86_64-unknown-linux-musl
 | 平台 | 状态 |
 | --- | --- |
 | Windows x64 | 已验证 |
-| Linux x64（musl 静态） | 已编译，未在真机长期验证 |
-| macOS | 未提供 |
+| Linux / macOS | 代码跨平台，可自行 `cargo build --release` 编译 |
 
 ## License
 

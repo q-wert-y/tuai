@@ -10,6 +10,9 @@ release/
 # 本地工具与缓存
 .tools/
 
+# 发布产物
+dist/
+
 # 编辑器
 .vscode/
 .idea/
