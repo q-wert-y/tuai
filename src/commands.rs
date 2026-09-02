@@ -3,14 +3,11 @@
 /// 面板动作。
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
-    NewSession,
-    FocusSidebar,
     SelectModel,
     ProviderAdd,
     ProviderEdit,
     ProviderDelete,
     ProviderSwitch,
-    RenameSession,
     EditSystemPrompt,
     ClearSession,
     ExportSession,

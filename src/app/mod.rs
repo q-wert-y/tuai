@@ -1101,11 +1101,6 @@ impl App {
 
     pub fn execute_action(&mut self, action: Action, tx: &mpsc::Sender<AppEvent>) {
         match action {
-            Action::NewSession => self.new_session(),
-            Action::FocusSidebar => {
-                self.focus = Focus::Sidebar;
-                self.sidebar_sel = self.view.current.unwrap_or(0);
-            }
             Action::SelectModel => self.fetch_models(tx),
             Action::ProviderAdd => {
                 self.form = Some(FormState::provider(
@@ -1119,18 +1114,6 @@ impl App {
             Action::ProviderEdit => self.open_provider_palette(PaletteKind::ProvidersEdit),
             Action::ProviderDelete => self.open_provider_palette(PaletteKind::ProvidersDelete),
             Action::ProviderSwitch => self.open_provider_palette(PaletteKind::ProvidersSwitch),
-            Action::RenameSession => {
-                if let Some(s) = self.current_session() {
-                    let id = s.id;
-                    let title = s.title.clone();
-                    self.form = Some(FormState::simple(
-                        "重命名会话",
-                        FormPurpose::RenameSession { session_id: id },
-                        "新标题",
-                        &title,
-                    ));
-                }
-            }
             Action::EditSystemPrompt => {
                 if let Some(s) = self.current_session() {
                     let id = s.id;
