@@ -12,11 +12,11 @@ pub enum Action {
     ProviderSwitch,
     RenameSession,
     EditSystemPrompt,
-    FavoriteModel,
     ClearSession,
     ExportSession,
     CopyCode,
     Regenerate,
+    Paste,
     ToggleHelp,
     Quit,
     /// 面板运行时动作：选择某个模型
@@ -37,16 +37,6 @@ pub struct CommandDef {
 /// 全部可用命令。
 pub fn all() -> Vec<CommandDef> {
     vec![
-        CommandDef {
-            label: "新建会话",
-            hint: "/new",
-            action: Action::NewSession,
-        },
-        CommandDef {
-            label: "切换会话",
-            hint: "/sessions",
-            action: Action::FocusSidebar,
-        },
         CommandDef {
             label: "选择模型",
             hint: "/model",
@@ -73,19 +63,9 @@ pub fn all() -> Vec<CommandDef> {
             action: Action::ProviderSwitch,
         },
         CommandDef {
-            label: "重命名会话",
-            hint: "/rename",
-            action: Action::RenameSession,
-        },
-        CommandDef {
             label: "设置系统提示词",
             hint: "/prompt",
             action: Action::EditSystemPrompt,
-        },
-        CommandDef {
-            label: "收藏/取消当前模型",
-            hint: "/fav",
-            action: Action::FavoriteModel,
         },
         CommandDef {
             label: "清空会话消息",
@@ -106,6 +86,11 @@ pub fn all() -> Vec<CommandDef> {
             label: "重新生成回复",
             hint: "/regen",
             action: Action::Regenerate,
+        },
+        CommandDef {
+            label: "粘贴剪贴板内容",
+            hint: "/paste",
+            action: Action::Paste,
         },
         CommandDef {
             label: "帮助",
@@ -144,11 +129,14 @@ mod tests {
 
     #[test]
     fn slash_parse() {
-        assert_eq!(parse_slash("/new"), Some(Action::NewSession));
-        assert_eq!(parse_slash("new"), Some(Action::NewSession));
+        assert_eq!(parse_slash("/paste"), Some(Action::Paste));
+        assert_eq!(parse_slash("paste"), Some(Action::Paste));
         assert_eq!(parse_slash("/provider add"), Some(Action::ProviderAdd));
         assert_eq!(parse_slash("/model"), Some(Action::SelectModel));
         assert_eq!(parse_slash("/unknown"), None);
         assert_eq!(parse_slash(""), None);
+        // 已删除的命令不再解析
+        assert_eq!(parse_slash("/new"), None);
+        assert_eq!(parse_slash("/fav"), None);
     }
 }

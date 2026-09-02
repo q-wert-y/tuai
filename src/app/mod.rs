@@ -142,6 +142,27 @@ impl App {
         });
     }
 
+    /// /paste：读取系统剪贴板文本，整段插入输入框（多行保留换行）。
+    fn paste_clipboard(&mut self) {
+        let text = match arboard::Clipboard::new().and_then(|mut cb| cb.get_text()) {
+            Ok(t) => t,
+            Err(e) => {
+                self.toast(format!("读取剪贴板失败: {e}"), true);
+                return;
+            }
+        };
+        if text.trim().is_empty() {
+            self.toast("剪贴板无文本内容", false);
+            return;
+        }
+        // 若有模态面板先关闭，回到输入框
+        self.palette = None;
+        self.form = None;
+        self.focus = Focus::Input;
+        self.input.insert_text(&text);
+        self.toast("已粘贴剪贴板内容", false);
+    }
+
     // ---------- 事件分发 ----------
 
     pub fn dispatch(&mut self, ev: AppEvent, tx: &mpsc::Sender<AppEvent>) {
@@ -1130,31 +1151,12 @@ impl App {
             Action::ExportSession => self.export_session(),
             Action::CopyCode => self.copy_code(),
             Action::Regenerate => self.regenerate(tx),
+            Action::Paste => self.paste_clipboard(),
             Action::ToggleHelp => self.show_help = !self.show_help,
             Action::Quit => self.quitting = true,
             Action::SetModel(m) => self.set_model(m),
             Action::SwitchProvider(n) => self.switch_provider(n),
             Action::RemoveProvider(n) => self.remove_provider(n),
-            Action::FavoriteModel => {
-                // 收藏/取消当前会话模型
-                if let Some(s) = self.current_session() {
-                    let (prov, model) = (s.provider.clone(), s.model.clone());
-                    if model.is_empty() {
-                        self.toast("当前无模型", false);
-                    } else {
-                        let starred = self.config.toggle_favorite(&prov, &model);
-                        self.save_config_or_toast();
-                        self.toast(
-                            if starred {
-                                format!("已收藏 {model}")
-                            } else {
-                                format!("已取消收藏 {model}")
-                            },
-                            false,
-                        );
-                    }
-                }
-            }
         }
     }
 

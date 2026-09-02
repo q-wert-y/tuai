@@ -354,6 +354,24 @@ impl InputState {
         self.cx += 1;
     }
 
+    /// 在光标处插入整段文本（多行保留换行，\r\n 统一为 \n）。
+    pub fn insert_text(&mut self, text: &str) {
+        let text = text.replace("\r\n", "\n");
+        let mut first = true;
+        for seg in text.split('\n') {
+            if !first {
+                self.newline();
+            }
+            if !seg.is_empty() {
+                let line = &mut self.lines[self.cy];
+                let byte = char_to_byte(line, self.cx);
+                line.insert_str(byte, seg);
+                self.cx += seg.chars().count();
+            }
+            first = false;
+        }
+    }
+
     pub fn newline(&mut self) {
         let byte = char_to_byte(&self.lines[self.cy], self.cx);
         let rest = self.lines[self.cy].split_off(byte);
@@ -506,6 +524,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn input_insert_text_multiline() {
+        let mut inp = InputState::new();
+        inp.insert_text("a\r\nb\nc");
+        assert_eq!(
+            inp.lines,
+            vec!["a".to_string(), "b".to_string(), "c".to_string()]
+        );
+        assert_eq!((inp.cy, inp.cx), (2, 1));
+        // 光标处插入（中间行）
+        let mut inp = InputState::new();
+        inp.insert_char('x');
+        inp.insert_text("1\n2");
+        assert_eq!(inp.lines, vec!["x1".to_string(), "2".to_string()]);
+        // 空行段落：空段不破坏结构
+        let mut inp = InputState::new();
+        inp.insert_text("\n\nz");
+        assert_eq!(inp.lines.len(), 3);
+        assert_eq!(inp.lines[2], "z");
+    }
+
+    #[test]
     fn palette_matches_hint_and_label() {
         // 输入斜杠命令词（hint）可命中
         let mut p = PaletteState::commands();
@@ -514,9 +553,9 @@ mod tests {
         assert!(p.visible.iter().any(|i| i.hint == "/model"));
         // 输入中文描述（label）可命中
         let mut p = PaletteState::commands();
-        p.filter = "新建".into();
+        p.filter = "粘贴".into();
         p.refilter();
-        assert!(p.visible.iter().any(|i| i.hint == "/new"));
+        assert!(p.visible.iter().any(|i| i.hint == "/paste"));
     }
 
     #[test]
