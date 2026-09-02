@@ -37,6 +37,9 @@ impl Focus {
 /// 命令面板状态。
 pub struct PaletteState {
     pub filter: String,
+    /// 焦点在搜索栏（true）还是列表条目（false）。
+    /// 搜索栏是循环导航的一环：列表顶部按 ↑ 进入搜索栏，底部按 ↓ 回到搜索栏。
+    pub on_filter: bool,
     pub selected: usize,
     /// 过滤后的可见条目
     pub visible: Vec<PaletteItem>,
@@ -65,6 +68,7 @@ impl PaletteState {
             .collect();
         let mut p = PaletteState {
             filter: String::new(),
+            on_filter: true,
             selected: 0,
             visible: Vec::new(),
             items,
@@ -96,6 +100,7 @@ impl PaletteState {
         }
         let mut p = PaletteState {
             filter: String::new(),
+            on_filter: true,
             selected: 0,
             visible: Vec::new(),
             items,
@@ -116,6 +121,7 @@ impl PaletteState {
             .collect();
         let mut p = PaletteState {
             filter: String::new(),
+            on_filter: true,
             selected: 0,
             visible: Vec::new(),
             items,
@@ -147,20 +153,34 @@ impl PaletteState {
     }
 
     pub fn move_up(&mut self) {
-        // 循环导航：顶端按上 → 跳到底端
-        if !self.visible.is_empty() {
-            self.selected = if self.selected == 0 {
-                self.visible.len() - 1
+        // 循环导航（搜索栏参与循环）：搜索栏按 ↑ → 末条；顶部条目按 ↑ → 搜索栏
+        if self.on_filter {
+            if !self.visible.is_empty() {
+                self.on_filter = false;
+                self.selected = self.visible.len() - 1;
+            }
+        } else if !self.visible.is_empty() {
+            if self.selected == 0 {
+                self.on_filter = true;
             } else {
-                self.selected - 1
-            };
+                self.selected -= 1;
+            }
         }
     }
 
     pub fn move_down(&mut self) {
-        // 循环导航：底端按下 → 跳到顶端
-        if !self.visible.is_empty() {
-            self.selected = (self.selected + 1) % self.visible.len();
+        // 循环导航（搜索栏参与循环）：搜索栏按 ↓ → 首条；末尾条目按 ↓ → 搜索栏
+        if self.on_filter {
+            if !self.visible.is_empty() {
+                self.on_filter = false;
+                self.selected = 0;
+            }
+        } else if !self.visible.is_empty() {
+            if self.selected + 1 == self.visible.len() {
+                self.on_filter = true;
+            } else {
+                self.selected += 1;
+            }
         }
     }
 }
@@ -562,13 +582,21 @@ mod tests {
     fn palette_wrap_navigation() {
         let p = PaletteState::models(vec!["a".into(), "b".into(), "c".into()], Vec::new());
         let mut p = p;
-        // 底端按下 → 顶端
-        p.selected = p.visible.len() - 1;
+        // 初始焦点在搜索栏，按下 → 首条
+        assert!(p.on_filter);
         p.move_down();
         assert_eq!(p.selected, 0);
-        // 顶端按上 → 底端
+        assert!(!p.on_filter);
+        // 顶端按上 → 搜索栏
+        p.move_up();
+        assert!(p.on_filter);
+        // 搜索栏按上 → 底端
         p.move_up();
         assert_eq!(p.selected, p.visible.len() - 1);
+        assert!(!p.on_filter);
+        // 底端按下 → 搜索栏
+        p.move_down();
+        assert!(p.on_filter);
     }
 
     #[test]

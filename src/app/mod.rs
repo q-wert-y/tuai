@@ -518,6 +518,7 @@ impl App {
             }
             KeyCode::Backspace => {
                 if let Some(p) = &mut self.palette {
+                    p.on_filter = true;
                     p.filter.pop();
                     p.refilter();
                 }
@@ -529,12 +530,16 @@ impl App {
                 {
                     return;
                 }
-                // 模型面板：f 收藏/取消选中模型
-                if c == 'f' && self.palette_kind == PaletteKind::Models {
+                // 模型面板：焦点在列表条目时 f 收藏/取消收藏；焦点在搜索栏时 f 作为过滤字符输入
+                if c == 'f'
+                    && self.palette_kind == PaletteKind::Models
+                    && !self.palette.as_ref().is_some_and(|p| p.on_filter)
+                {
                     self.toggle_palette_favorite();
                     return;
                 }
                 if let Some(p) = &mut self.palette {
+                    p.on_filter = true;
                     p.filter.push(c);
                     p.refilter();
                 }

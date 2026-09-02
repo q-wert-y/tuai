@@ -26,10 +26,18 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
     let inner = block.inner(rect);
     f.render_widget(block, rect);
 
+    // 搜索栏：作为循环导航的一环，选中时高亮
+    let filter_sel_style = if p.on_filter {
+        Style::new().fg(theme.accent).add_modifier(Modifier::BOLD)
+    } else {
+        Style::new().fg(theme.accent)
+    };
+    let filter_mark = if p.on_filter { "▸ " } else { "  " };
     let mut lines = vec![
         Line::from(vec![
-            Span::styled("❯ ", Style::new().fg(theme.accent)),
-            Span::raw(p.filter.clone()),
+            Span::styled(filter_mark, filter_sel_style),
+            Span::styled("❯ ", filter_sel_style),
+            Span::styled(p.filter.clone(), filter_sel_style),
         ]),
         Line::from(""),
     ];
@@ -79,7 +87,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
     if app.palette_kind == PaletteKind::Models {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            " f 收藏/取消 · Enter 选择 ",
+            " ↑↓ 导航（含搜索栏）· f 收藏模型 · Enter 选择 ",
             Style::new().fg(theme.faint),
         )));
     }
