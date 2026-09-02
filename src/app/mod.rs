@@ -161,36 +161,8 @@ impl App {
                 MouseEventKind::ScrollDown => self.scroll_down(3),
                 _ => {}
             },
-            Event::Paste(text) => self.on_paste(&text),
             _ => {}
         }
-    }
-
-    /// 处理终端粘贴事件（bracketed paste）：按当前界面状态插入文本。
-    fn on_paste(&mut self, text: &str) {
-        if text.is_empty() {
-            return;
-        }
-        if self.form.is_some() {
-            if let Some(f) = &mut self.form {
-                f.insert_text(text);
-            }
-            return;
-        }
-        if let Some(p) = &mut self.palette {
-            // 命令面板过滤框：逐字符插入（忽略换行）
-            for c in text.chars() {
-                if c == '\n' || c == '\r' {
-                    continue;
-                }
-                p.filter.push(c);
-            }
-            p.refilter();
-            return;
-        }
-        // 默认粘贴到输入框（保留换行）
-        self.focus = Focus::Input;
-        self.input.insert_text(text);
     }
 
     fn on_key(&mut self, key: KeyEvent, tx: &mpsc::Sender<AppEvent>) {
@@ -1526,29 +1498,17 @@ fn pick_default_provider(config: &Config) -> String {
 /// 初始化终端并运行事件循环（返回 = 用户退出）。
 pub async fn run(config: Config, store: Store, data_dir: PathBuf) -> anyhow::Result<()> {
     let mut terminal = ratatui::init();
-    let _ = crossterm::execute!(
-        std::io::stdout(),
-        crossterm::event::EnableMouseCapture,
-        crossterm::event::EnableBracketedPaste
-    );
+    let _ = crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture);
     let mut app = match App::new(config, store, data_dir) {
         Ok(a) => a,
         Err(e) => {
-            let _ = crossterm::execute!(
-                std::io::stdout(),
-                crossterm::event::DisableMouseCapture,
-                crossterm::event::DisableBracketedPaste
-            );
+            let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture);
             ratatui::restore();
             return Err(e);
         }
     };
     let result = drive(&mut terminal, &mut app).await;
-    let _ = crossterm::execute!(
-        std::io::stdout(),
-        crossterm::event::DisableMouseCapture,
-        crossterm::event::DisableBracketedPaste
-    );
+    let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture);
     ratatui::restore();
     result
 }
