@@ -86,12 +86,12 @@
 | `d` `d` | 删除选中消息（按两次） |
 | `c` | 复制最近代码块 |
 | `n` / `r` / `d` `d` | 侧栏：新建 / 重命名 / 删除会话 |
-| `f` | 模型面板中收藏模型（或 `/fav`） |
+| `f` | 模型面板中收藏模型 |
 | `Ctrl+R` | 重新生成回复 |
 | `/` | 命令面板 · `?` 完整帮助 |
 | `Ctrl+C` ×2 / `Ctrl+D` | 退出 |
 
-常用命令：`/new` `/sessions` `/model` `/provider` `/clear` `/export` `/rename` `/prompt` `/fav` `/regen` `/help` `/quit`
+常用命令：`/model` `/provider` `/prompt` `/clear` `/export` `/copy` `/regen` `/paste` `/quit`
 
 ## 配置示例
 

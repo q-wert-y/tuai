@@ -1135,7 +1135,6 @@ impl App {
             Action::CopyCode => self.copy_code(),
             Action::Regenerate => self.regenerate(tx),
             Action::Paste => self.paste_clipboard(),
-            Action::ToggleHelp => self.show_help = !self.show_help,
             Action::Quit => self.quitting = true,
             Action::SetModel(m) => self.set_model(m),
             Action::SwitchProvider(n) => self.switch_provider(n),

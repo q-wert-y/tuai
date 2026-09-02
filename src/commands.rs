@@ -14,7 +14,6 @@ pub enum Action {
     CopyCode,
     Regenerate,
     Paste,
-    ToggleHelp,
     Quit,
     /// 面板运行时动作：选择某个模型
     SetModel(String),
@@ -88,11 +87,6 @@ pub fn all() -> Vec<CommandDef> {
             label: "粘贴剪贴板内容",
             hint: "/paste",
             action: Action::Paste,
-        },
-        CommandDef {
-            label: "帮助",
-            hint: "/help",
-            action: Action::ToggleHelp,
         },
         CommandDef {
             label: "退出",
